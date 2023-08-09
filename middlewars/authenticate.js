@@ -15,12 +15,16 @@ async function authenticate(req, res, next) {
   }
 
   try {
-    const { id } = jwt.verify(token, JWT_secret);
+    const { id, exp } = jwt.verify(token, JWT_secret);
+    const currentTime = Math.floor(Date.now() / 1000);
+
+    if (exp && currentTime > exp) {
+      throw HttpError(401, "Token has expired");
+    }
+
     const user = await User.findById(id);
 
     if (!user || !user.token) {
-      console.log("HE PA6OTAET");
-
       throw HttpError(401);
     }
     req.user = user;
