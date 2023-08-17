@@ -9,16 +9,20 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/user.js");
 
+const { nanoid } = require("nanoid");
+
 const dotenv = require("dotenv");
+const sendMail = require("../helpers/sendEmail.js");
 // const { use } = require("../routes/api/contacts.js");
 dotenv.config();
 
-const { JWT_secret } = process.env;
+const { JWT_secret, UKR_NET_EMAIL, UKR_NET_PASSWORD, BASE_URL } = process.env;
 
 const posterPath = path.resolve("public", "avatars");
 
 const signup = async (req, res) => {
   const { email, password } = req.body;
+  const verificationToken = nanoid(6);
 
   const user = await User.findOne({ email });
 
@@ -34,7 +38,12 @@ const signup = async (req, res) => {
     ...req.body,
     password: hashPassword,
     avatarURL: avatarUrl,
+    verificationToken,
   });
+
+  const verifyEmail = createVerifyEmail({ email, verificationToken });
+
+  await sendMail(verifyEmail);
 
   res.status(201).json({
     name: newUser.name,
@@ -50,6 +59,10 @@ const signin = async (req, res) => {
     throw HttpError(401, "Email or password invalid");
   }
 
+  if (!user.verify) {
+    throw HttpError(401, "Email not verify");
+  }
+
   const passwordCompare = await bcrypt.compare(password, user.password);
 
   if (!passwordCompare) {
@@ -63,6 +76,40 @@ const signin = async (req, res) => {
   const token = await jwt.sign(payload, JWT_secret, { expiresIn: "23h" });
   await User.findByIdAndUpdate(user._id, { token });
   res.json({ token });
+};
+
+const verificationToken = async (req, res) => {
+  const { verificationToken } = req.params;
+  const user = await User.findOne({ verificationToken });
+  if (!user) {
+    throw HttpError(404, "User not found");
+  }
+  await User.findByIdAndUpdate(user._id, {
+    verify: true,
+    verificationToken: "",
+  });
+  res.status(200).json({ message: "Verification successful" });
+};
+
+const resendVerifyEmail = async (req, res) => {
+  const { email } = req.body;
+  const user = await User.findOne({ email });
+  if (!user) {
+    throw HttpError(404, "email not found");
+  }
+
+  if (user.verify) {
+    throw HttpError(400, "Verification has already been passed");
+  }
+
+  const verifyEmail = createVerifyEmail({
+    email,
+    verificationToken: user.verificationToken,
+  });
+
+  await sendMail(verifyEmail);
+
+  res.status(200).json({ message: "Verification email sent" });
 };
 
 const getCurrnet = async (req, res) => {
@@ -113,11 +160,9 @@ const avatarsUpdate = async (req, res) => {
         console.error(err);
         throw HttpError(400, "img resize error");
       });
-    console.log("JIMPTImg", JIMPTImg);
 
     await fs.rename(oldPath, newPath);
     await User.findByIdAndUpdate(userId, { avatarURL: newPath });
-
     res.status(200).json({ message: "Avatar updated successfully" });
   } catch (error) {
     console.error("Error while updating avatar:", error);
@@ -132,4 +177,6 @@ module.exports = {
   logout: ctrlWrapper(logout),
   subscriptionUpdate: ctrlWrapper(subscriptionUpdate),
   avatarsUpdate: ctrlWrapper(avatarsUpdate),
+  verificationToken: ctrlWrapper(verificationToken),
+  resendVerifyEmail: ctrlWrapper(resendVerifyEmail),
 };

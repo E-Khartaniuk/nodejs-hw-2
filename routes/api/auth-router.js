@@ -13,6 +13,7 @@ const {
   logout,
   subscriptionUpdate,
   avatarsUpdate,
+  verificationToken,
 } = require("../../controllers/auth-controller.js");
 
 const { authenticate } = require("../../middlewars/authenticate.js");
@@ -30,6 +31,12 @@ authRouter.patch(
   uploadMiddleware.single("avatars"),
   authenticate,
   avatarsUpdate
+);
+authRouter.get("/users/verify/:verificationToken", verificationToken);
+authRouter.post(
+  "/users/verify",
+  validateBody(userEmailSchema),
+  resendVerifyEmail
 );
 
 module.exports = authRouter;
